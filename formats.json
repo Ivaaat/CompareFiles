@@ -1,0 +1,53 @@
+{
+  "header": [
+    5,
+    3,
+    2,
+    3,
+    2
+  ],
+  "body": {
+    "bisFirstLeg": 6,
+    "recordType": 5,
+    "callDirection": 5,
+    "callTimeOut": 14,
+    "callDuration": 10,
+    "dataVolume": 10,
+    "id": 21,
+    "id2": 21,
+    "id3": 21,
+    "otherParty": 31,
+    "fwdA": 31,
+    "imei": 17,
+    "incomingRoute": 10,
+    "outgoingRoute": 10,
+    "locationArea": 5,
+    "cell": 10,
+    "olServiceType": 5,
+    "olServiceId": 10,
+    "olServiceExtension": 3,
+    "serviceCode": 10,
+    "chainReference": 10,
+    "isForwarded": 1,
+    "isPreCharged": 1,
+    "isHasTax": 1,
+    "isFirstCdr": 1,
+    "companyZone": 10,
+    "charge": 20,
+    "mscId": 20,
+    "seqN": 10,
+    "originNetworkId": 10,
+    "rnA": 5,
+    "rnB": 5,
+    "rnC": 5,
+    "resourceParamType": 15,
+    "resourceParamValue": 15
+  },
+  "trailer": [
+    5,
+    3,
+    2,
+    3,
+    2
+  ]
+}
