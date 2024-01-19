@@ -9,18 +9,13 @@ import os
 from abc import ABC, abstractmethod
 
 
-
-
-
-
-
 class FileFolderPrepare:
-    file_list_compare = []
 
 
-    def __init__(self, etl: str, src :str) -> None:
-        self.etl = etl
-        self.src = src
+    def __init__(self, etl_path: str, src_path :str) -> None:
+        self.etl = etl_path
+        self.src = src_path
+        self.file_list_compare = []
         
 
     def get_list_files(self) -> list: 
@@ -28,17 +23,17 @@ class FileFolderPrepare:
             self.path_etl = os.path.abspath(self.etl)
             self.path_src = os.path.abspath(self.src)
             for file_etl, file_src in zip(os.listdir(self.path_etl), os.listdir(self.path_src)):
-                self.prepare_name(file_etl, file_src)
+                self._prepare_name(file_etl, file_src)
         elif isfile(self.etl) and isfile(self.src):
             self.path_etl, self.etl = os.path.split(os.path.abspath(self.etl))
             self.path_src, self.src = os.path.split(os.path.abspath(self.src))
-            self.prepare_name(self.etl, self.src)
+            self._prepare_name(self.etl, self.src)
         else:
             print("Сравнить можно либо папки, либо файлы")
         return self.file_list_compare
     
 
-    def prepare_name(self, etl_name, src_name):
+    def _prepare_name(self, etl_name, src_name):
         if etl_name == src_name:
             self.file_list_compare.append(etl_name)
         else:
@@ -99,7 +94,7 @@ class FilePrepare:
 
 
 
-class FullFileComparer(ABC):
+class FullFileComparer:
 
     def __init__(self, etl: list, src: list):
         self.num_record = 1
@@ -116,26 +111,45 @@ class FullFileComparer(ABC):
         self.part_name = ''
 
 
-    @abstractmethod
-    def compare(self):
+    #@abstractmethod
+    def compare(self, names: list = []):
         self._get_records_only()
-        self.report['errors'] = {'num_record':  dict()}
+        self.report['errors'] = {'num_field':  dict()}
         for field_etls, field_srcs in zip(self.list_etl, self.list_src):
-            self.total_matched +=1
+            self.total_matched+=1
             if field_etls == field_srcs:
                 self.indentical+=1
             else:
-                self.report['errors']['num_record'][self.num_record] =  {'num_field': dict()}
-                num_field= 0
+                #self.report['errors']['num_record'][self.num_record] =  {'num_field': dict()}
+                num_field = 0
                 for field_etl, field_src in zip(field_etls, field_srcs):
+                    
                     if field_etl != field_src:
-                        self.broken_attributes+=1
-                        self.report['errors']['num_record'][self.num_record]['num_field'][num_field] = {
+                        if num_field in self.report['errors']['num_field']:
+                            
+                            #self.report['errors']['num_field'][num_field]['num_record'] = self.num_record 
+                            self.report['errors']['num_field'][num_field]['num_record'][self.num_record] = {
+                                                                                'name_field' : names[num_field] if names[0] != "" else "",
                                                                                 'etl_value':field_etl,
-                                                                                'src_value': field_src,
+                                                                                'src_value': field_src
                                                                                 }
-                num_field+=1
+                        else:
+                            self.report['errors']['num_field'][num_field] = {'num_record':{self.num_record : {
+                                                                                'name_field' : names[num_field] if names[0] != "" else "",
+                                                                                'etl_value':field_etl,
+                                                                                'src_value': field_src}}}
+
+                        # self.report['errors']['num_record'][self.num_record]['num_field'][num_field] = {
+                        #                                                     'name_field' : names[num_field] if names else "",
+                        #                                                     'etl_value':field_etl,
+                        #                                                     'src_value': field_src
+                        #                                                     }
+                        self.broken_attributes+=1
+                    
+                    num_field+=1
             self.num_record+=1
+        if not self.report['errors']['num_field']:
+            self.report['errors'] = None
         self.report['statistics'] = dict()
         self.report['statistics']['indentical'] = self.indentical
         self.report['statistics']['broken_attributes'] = self.broken_attributes
@@ -161,10 +175,6 @@ class Header(FullFileComparer):
     def __init__(self, etl: list, src: list) -> None:
         super().__init__(etl, src)
 
-        
-
-    def compare(self):
-        return super().compare()
 
 
 class Body(FullFileComparer):
@@ -172,38 +182,6 @@ class Body(FullFileComparer):
     def __init__(self, etl: list, src: list, num_record_header = 0) -> None:
         super().__init__(etl, src)
         self.num_record = num_record_header + 1
-
-
-    def compare(self, body: dict):
-        super()._get_records_only()
-        self.report['errors'] = {'num_record':  dict()}
-        for field_etls, field_srcs in zip(self.list_etl, self.list_src):
-            self.total_matched+=1
-            if field_etls == field_srcs:
-                self.indentical+=1
-            else:
-                self.report['errors']['num_record'][self.num_record] =  {'num_field': dict()}
-                for i, name_field in enumerate(body):
-                    try:
-                        if field_etls[i] != field_srcs[i]:
-                            self.report['errors']['num_record'][self.num_record]['num_field'][i] = {
-                                                                                'name_field' : name_field,
-                                                                                'etl_value':field_etls[i],
-                                                                                'src_value': field_srcs[i]
-                                                                                }
-                            self.broken_attributes+=1
-                    except IndexError:
-                        break
-            self.num_record+=1
-        self.report['statistics'] = dict()
-        self.report['statistics']['indentical'] = self.indentical
-        self.report['statistics']['broken_attributes'] = self.broken_attributes
-        self.report['statistics']['total_matched'] = self.total_matched
-        self.report['statistics']['only_in_etl'] = self.only_in_etl
-        self.report['statistics']['only_in_src'] = self.only_in_src
-        self.report['statistics']['len_etl'] = self.len_etl
-        self.report['statistics']['len_src'] = self.len_src
-        return self.report
 
 
 class Trailer(FullFileComparer):
@@ -214,8 +192,6 @@ class Trailer(FullFileComparer):
         self.num_record = num_record_body
     
 
-    def compare(self):
-        return super().compare()
 
 
 
@@ -229,13 +205,13 @@ class CompareFactory:
         self.filename = filename
 
 
-    def compare(self, body_name_fields):
+    def compare(self):
         if self.header:
-            self.report['header'] = self.header.compare()
+            self.report['header'] = self.header.compare(setting.HEADER_NAMES)
         if self.body:
-            self.report['body'] = self.body.compare(body_name_fields)
+            self.report['body'] = self.body.compare(setting.BODY_NAMES)
         if self.trailer:
-            self.report['trailer'] = self.trailer.compare()
+            self.report['trailer'] = self.trailer.compare(setting.TRAILER_NAMES)
         return {self.filename:self.report}
                 
 
@@ -246,7 +222,6 @@ class GetRecordsFile:
             self.records = f.readlines()
 
 class ReportAll:
-    list_compares= []
     date = datetime.now().date()
     total_len_etl = 0
     total_len_src = 0
@@ -257,154 +232,83 @@ class ReportAll:
     total_indentical = 0
     total_errors = {}
     comparison_header = 'Comparing file;Date;Records in etalon;Records in src;Total matched by line ID;In etalon only;In src only;Broken attributes same ID;Identical\n'
+    if not exists(setting.RES):
+        os.mkdir(setting.RES)
+    with open(join(setting.RES, f'result_{str(datetime.now().date())}.csv'), 'w+') as csv_file: 
+        csv_file.write(comparison_header)
 
 
-    def __init__(self, comparer, path_result) -> None:
-        self.path_result = path_result
+    def __init__(self, comparer) -> None:
         self.filename = comparer.filename
-        self.errors = [error['errors'] for error in comparer.report.values()]
+        self.errors = [error['errors'] for error in comparer.report.values() if error['errors'] != None]
         self.totals = [total['statistics'] for total in comparer.report.values()]
+        self.record_len_etl = 0
+        self.record_len_src = 0
+        self.record_matched = 0
+        self.record_only_in_etl = 0
+        self.record_only_in_src = 0
+        self.record_broken_attributes = 0
+        self.record_indentical = 0
+    
     
     def create_file_report_csv(self):
-        if not exists(self.path_result):
-            os.mkdir(self.path_result)
-        # with open(join(self.path_result, f'result_{self.date}.csv'), 'a+') as csv_file: 
-        #     csv_file.write(self.comparison_header)
-        with open(join(self.path_result, f'result_{self.date}.csv'), 'a+') as csv_file: 
-            csv_file.write(self.comparison_header)
-            csv_writer = csv.writer(csv_file)
-            total_len_etl = 0
-            total_len_src = 0
-            total_matched = 0
-            total_only_in_etl = 0
-            total_only_in_src = 0
-            total_broken_attributes = 0
-            total_indentical = 0
+        with open(join(setting.RES, f'result_{self.date}.csv'), 'a+', newline='') as csv_file: 
+            csv_writer = csv.writer(csv_file, delimiter = ';')
             for part_value in self.totals:
-                total_len_etl +=part_value['len_etl']
-                total_len_src +=part_value['len_src']
-                total_matched +=part_value['total_matched']
-                total_only_in_etl +=part_value['only_in_etl']
-                total_only_in_src +=part_value['only_in_src']
-                total_broken_attributes +=part_value['broken_attributes']
-                total_indentical +=part_value['indentical']
-            self.total_len_etl+=total_len_etl
-            self.total_len_src+=total_len_etl
-            self.total_matched+=total_matched
-            self.total_only_in_etl+=total_only_in_etl
-            self.total_only_in_src+=total_only_in_src
-            self.total_broken_attributes+=total_broken_attributes
-            self.total_indentical+=total_indentical
+                self.record_len_etl +=part_value['len_etl']
+                self.record_len_src +=part_value['len_src']
+                self.record_matched +=part_value['total_matched']
+                self.record_only_in_etl +=part_value['only_in_etl']
+                self.record_only_in_src +=part_value['only_in_src']
+                self.record_broken_attributes +=part_value['broken_attributes']
+                self.record_indentical +=part_value['indentical']
+            ReportAll.total_len_etl+=self.record_len_etl
+            ReportAll.total_len_src+=self.record_len_src
+            ReportAll.total_matched+=self.record_matched
+            ReportAll.total_only_in_etl+=self.record_only_in_etl
+            ReportAll.total_only_in_src+=self.record_only_in_src
+            ReportAll.total_broken_attributes+=self.record_broken_attributes
+            ReportAll.total_indentical+=self.record_indentical
             csv_writer.writerow([self.filename, 
-                                    total_len_etl,
-                                    total_len_src,
-                                    total_matched,
-                                    total_only_in_etl,
-                                    total_only_in_src,
-                                    total_broken_attributes,
-                                    total_indentical])   
-            
+                                    datetime.now(),
+                                    self.record_len_etl,
+                                    self.record_len_src,
+                                    self.record_matched,
+                                    self.record_only_in_etl,
+                                    self.record_only_in_src,
+                                    self.record_broken_attributes,
+                                    self.record_indentical])   
                 
 
+    def create_file_errors_report(self):
+        for errors in self.errors:
 
-    def create_file_report(self):
-        with open( f'filename_{self.filename}', 'a+') as report_file: 
-            for errors in self.errors:
-                for num_record, num_fields in errors['num_record'].items():
-                    report_file.write("\nnum_record: {};\n".format(num_record))
-                    for num_field, value in num_fields['num_field'].items():
-                        report_file.write("  num_field: {};\n".format(num_field))
+            for num_fields, num_records  in errors['num_field'].items():
+                with open( f'num_fields_{num_fields}', 'w+') as report_file: 
+                    report_file.write("{};\n".format(self.filename))
+                    for num_record,value  in num_records['num_record'].items():
+                        report_file.write("  num_record: {};\n".format(num_record))
+                        #report_file.write("  num_field: {};\n".format(num_field))
                         for name, value_field in value.items():
                             report_file.write("   {} : {}\n".format(name, value_field))
     
 
-    def write_total_record(self):
-        with open(join(self.path_result, f'result_{self.date}.csv'), 'a+') as csv_file: 
-            csv_writer = csv.writer(csv_file)
+    @classmethod
+    def write_total_record(cls):
+        with open(join(setting.RES, f'result_{cls.date}.csv'), 'a+') as csv_file: 
+            csv_writer = csv.writer(csv_file, delimiter= ';')
             csv_writer.writerow(['TOTAL', 
-                                self.total_len_etl,
-                                self.total_len_src,
-                                self.total_matched,
-                                self.total_only_in_etl,
-                                self.total_only_in_src,
-                                self.total_broken_attributes,
-                                self.total_indentical])  
+                                datetime.now(),
+                                cls.total_len_etl,
+                                cls.total_len_src,
+                                cls.total_matched,
+                                cls.total_only_in_etl,
+                                cls.total_only_in_src,
+                                cls.total_broken_attributes,
+                                cls.total_indentical,
+                                '{0:.2f}%'.format((cls.total_indentical/cls.total_len_etl)*100),
+                                '{0:.2f}%'.format((cls.total_broken_attributes/cls.total_len_etl)*100)])
     
-
-class TotalReport(ReportAll):
-
-    def __init__(self, totals) -> None:
-        self.totals = totals
-        self.len_etl = 0
-        self.len_src = 0
-        self.matched = 0
-        self.only_in_etl = 0
-        self.only_in_src = 0
-        self.broken_attributes = 0
-        self.indentical = 0
-    
-    def create_file_report_csv(self):
-        if not exists(self.path_result):
-            os.mkdir(self.path_result)
-        # with open(join(self.path_result, f'result_{self.date}.csv'), 'a+') as csv_file: 
-        #     csv_file.write(self.comparison_header)
-        with open(join(self.path_result, f'result_{self.date}.csv'), 'a+') as csv_file: 
-            csv_file.write(self.comparison_header)
-            csv_writer = csv.writer(csv_file)
-            total_len_etl = 0
-            total_len_src = 0
-            total_matched = 0
-            total_only_in_etl = 0
-            total_only_in_src = 0
-            total_broken_attributes = 0
-            total_indentical = 0
-            for part_value in self.totals:
-                total_len_etl +=part_value['len_etl']
-                total_len_src +=part_value['len_src']
-                total_matched +=part_value['total_matched']
-                total_only_in_etl +=part_value['only_in_etl']
-                total_only_in_src +=part_value['only_in_src']
-                total_broken_attributes +=part_value['broken_attributes']
-                total_indentical +=part_value['indentical']
-            self.total_len_etl+=total_len_etl
-            self.total_len_src+=total_len_etl
-            self.total_matched+=total_matched
-            self.total_only_in_etl+=total_only_in_etl
-            self.total_only_in_src+=total_only_in_src
-            self.total_broken_attributes+=total_broken_attributes
-            self.total_indentical+=total_indentical
-            csv_writer.writerow([self.filename, 
-                                    total_len_etl,
-                                    total_len_src,
-                                    total_matched,
-                                    total_only_in_etl,
-                                    total_only_in_src,
-                                    total_broken_attributes,
-                                    total_indentical])   
-
-
-
-class ErrorReport(ReportAll):
-
-    def __init__(self) -> None:
-        pass
-
-    
-    def create_file_report(self):
-        with open( f'filename_{self.filename}', 'a+') as report_file: 
-            for errors in self.errors:
-                for num_record, num_fields in errors['errors']['num_record'].items():
-                    report_file.write("\nnum_record: {};\n".format(num_record))
-                    for num_field, value in num_fields['num_field'].items():
-                        report_file.write("  num_field: {};\n".format(num_field))
-                        for name, value_field in value.items():
-                            report_file.write("   {} : {}\n".format(name, value_field))
-                    
-
-
-
-
-
 
 class Report:
     list_compares= []
@@ -426,7 +330,7 @@ class Report:
                                  
 
 
-def thread(etalon_path, source_path, list_files):
+def main(etalon_path, source_path, list_files):
     # if exists(FILENAME_FORMAT):
     #     with open(FILENAME_FORMAT, "r") as file:
     #         formats = json.load(file)
@@ -443,42 +347,23 @@ def thread(etalon_path, source_path, list_files):
     #         json.dump(FILE_STRUCTURE, file)
     #     return print("Заполнить файл formats.json")
     full_compare = True
-    
-    #filePrerare = FilePrepare(header_format, body_format, trailer_format, full=full_compare, prepare_etl=False)
-    # n_workers = 10
-    # chunksize = round(len(list_files) / n_workers)
-    # with concurrent.futures.ThreadPoolExecutor(n_workers) as exe:
-    #     for i in range(0, len(list_files), chunksize):
-    #         filenames = list_files[i:(i + chunksize)]
-    #         results = exe.submit(move_files, filenames)
-    #         print(results.result())
     filePrerare = FilePrepare(setting.HEADER_SIZE, setting.BODY_SIZE, setting.TRAILER_SIZE, full=full_compare, prepare_etl=False)
     for filename in list_files:
         etl = GetRecordsFile(etalon_path, filename)
         src = GetRecordsFile(source_path, filename)
         comparer = filePrerare.create_comparer(etl.records, src.records, filename)
-        comparer.compare(setting.BODY_NAMES)
-        reportAll = ReportAll(comparer, setting.RES)
-        reportAll.create_file_report()
+        comparer.compare()
+        reportAll = ReportAll(comparer)
+        if reportAll.errors:
+            reportAll.create_file_errors_report()
         reportAll.create_file_report_csv()
-    reportAll.write_total_record()
-        # reportErrorFile = ErrorReport()
-        # reportErrorFile.create_file_report()
-        # totalReportFile = TotalReport()
-        # totalReportFile.create_file_report('res')
-        #Report.list_compares.append(comparer)
+       
 
-    #Report.to_excel('res')
-def main(path_etl, path_src, list_files):
-    # with concurrent.futures.ThreadPoolExecutor() as executor:
-    #     futures = []
-    #     for i in range(10):
-    #         futures.append(executor.submit(comparator.compare_files, f"file1_{i}.txt", f"file2_{i}.txt"))
-    #     for future in concurrent.futures.as_completed(futures):
-    #         future.result()
+def compare_multithreading(path_etl, path_src, list_files):
+    
     n_workers = 10
-    #chunksize = round(len(list_files) / n_workers)
-    chunksize = 1
+    chunksize = round(len(list_files) / n_workers)
+    #chunksize = 1
     # create the process pool
     with ThreadPoolExecutor(n_workers) as exe:
         #results = list(exe.map(move_files, files))
@@ -487,14 +372,19 @@ def main(path_etl, path_src, list_files):
             #print(i)
             # select a chunk of filenames
             filenames = list_files[i:(i + chunksize)]
-            results = exe.submit(thread, path_etl, path_src, filenames)
+            results = exe.submit(main, path_etl, path_src, filenames)
             print(results.result())
+    
 
 
 files = FileFolderPrepare(setting.ETL, setting.SRC)
 list_files = files.get_list_files()
 
-thread(files.path_etl, files.path_src, list_files)
+if len(list_files) > 100:
+    compare_multithreading(files.path_etl, files.path_src, list_files)
+else:
+    main(files.path_etl, files.path_src, list_files)
+ReportAll.write_total_record()
 
         
 
