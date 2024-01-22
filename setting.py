@@ -9,6 +9,8 @@ FILE_STRUCTURE = {'header':["only int"],
 config = configparser.ConfigParser()
 config.read("config_comparison.ini")
 try:
+    TYPE_DELIMITER = config['general']['type_delimiter']
+    DELIMITER = config['unf_output']['delimiter']
     ETL  = config['unf_output']['etalons']
     SRC  = config['unf_output']['sources']
     RES = config['unf_output']['result_dir']

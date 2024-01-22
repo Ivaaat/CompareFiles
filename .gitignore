@@ -2,3 +2,5 @@
 *.txt
 *.ps1
 test.py
+*.report
+*.pyc

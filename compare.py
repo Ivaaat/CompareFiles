@@ -39,46 +39,94 @@ class FileFolderPrepare:
         else:
             print("Нужно выражения для обработки названия файлов")
 
+class Prepare:
 
-class FilePrepare:
+    def __init__(self, num_records_header, num_records_trailer , 
+                 full, prepare_etl) -> None:
+        self.full = full
+        self.prepare_etl = prepare_etl
+        self.num_record_header = num_records_header
+        self.num_record_trailer = num_records_trailer
+
+    def _prepare_etalon(self, etl, src):
+        self.etl = etl
+        self.src = src
+        if self.prepare_etl:
+            self.etl = etl[self.num_record_header:-self.num_record_trailer]
+
+
+        
+
+class FilePrepareDel(Prepare):
+    def __init__(self, delimiter, num_records_header = 1, num_records_trailer = 2, 
+                 full= False, prepare_etl = False) -> None:
+        super().__init__(num_records_header, num_records_trailer, full, prepare_etl)
+        self.delimiter = delimiter
+
+
+    def create_comparer(self, etl, src, filename):
+        super()._prepare_etalon(etl, src)
+        if self.full:
+            header1, body1, trailer1 = self._split_records_all(self.etl)
+            header2, body2, trailer2 = self._split_records_all(self.src)
+            return CompareFactory(filename, Header(header1, header2), Body(body1, body2, self.num_record_header), Trailer(trailer1, trailer2, len(body1)))
+        else:
+            body1 = self._clear_split_record(self.etl)
+            body2 = self._clear_split_record(self.src)
+            return CompareFactory(filename, body = Body(body1, body2))
+        
+    
+    def _split_records_all(self, records):
+        header = self._clear_split_record(records[:self.num_record_header])
+        body = self._clear_split_record(records[self.num_record_header:-self.num_record_trailer])
+        trailer = self._clear_split_record(records[-self.num_record_trailer:])
+        return header, body, trailer
+    
+
+    def _clear_split_record(self, records):
+        compare_list = []
+        for record in records:
+            split_record = record.split(self.delimiter)
+            records_list = []
+            for field in split_record:
+                records_list.append(field.strip())
+            compare_list.append(records_list)
+        return compare_list
+
+
+class FilePrepare(Prepare):
     
 
     def __init__(self, size_header: list = [], 
                  size_body: list = [], 
                  size_trailer: list = [], 
                  num_records_header = 1, num_records_trailer = 2, 
-                 full = False, prepare_etl= False) -> None:
+                 full= False, prepare_etl = False) -> None:
+        super().__init__(num_records_header, num_records_trailer, full, prepare_etl)
         self.size_header = size_header
         self.size_body = size_body
         self.size_trailer = size_trailer
-        self.num_record_header = num_records_header
-        self.num_record_trailer = num_records_trailer
-        self.prepare_etl = prepare_etl
-        self.full = full
+        
     
 
     def create_comparer(self, etl, src, filename):
-        if self.prepare_etl:
-            etl = etl[self.num_record_header:-self.num_record_trailer]
-        if self.full:
-            header1, body1, trailer1 = self._split_records_all(etl)
-            header2, body2, trailer2 = self._split_records_all(src)
+        super()._prepare_etalon(etl, src)
+        if self.size_header and self.size_body and self.size_trailer:
+            header1, body1, trailer1 = self._split_records_all(self.etl)
+            header2, body2, trailer2 = self._split_records_all(self.src)
             return CompareFactory(filename, Header(header1, header2), Body(body1, body2, self.num_record_header), Trailer(trailer1, trailer2, len(body1)))
-        else:
-            body1 = self._split_records_body(etl)
-            body2 = self._split_records_body(src)
+        elif self.size_body:
+            body1 = self._clear_split_record(self.etl, self.size_body)
+            body2 = self._clear_split_record(self.src, self.size_body)
             return CompareFactory(filename, body = Body(body1, body2))
     
+
     def _split_records_all(self, records):
         header = self._clear_split_record(records[:self.num_record_header], self.size_header)
         body = self._clear_split_record(records[self.num_record_header:-self.num_record_trailer], self.size_body)
         trailer = self._clear_split_record(records[-self.num_record_trailer:], self.size_trailer)
         return header, body, trailer
-
-
-    def _split_records_body(self, records):
-        body = self._clear_split_record(records, self.size_body)
-        return body
+    
 
 
     def _clear_split_record(self, records, size_fields):
@@ -95,6 +143,7 @@ class FilePrepare:
 
 
 class FullFileComparer:
+    num_key = 0
 
     def __init__(self, etl: list, src: list):
         self.num_record = 1
@@ -102,13 +151,13 @@ class FullFileComparer:
         self.list_src = src
         self.len_etl = len(etl)
         self.len_src = len(src)
-        self.report = dict()
         self.total_matched = 0
         self.only_in_src = 0
         self.only_in_etl = 0
         self.broken_attributes = 0
         self.indentical = 0
-        self.part_name = ''
+        self.report = dict()
+
 
 
     #@abstractmethod
@@ -120,32 +169,22 @@ class FullFileComparer:
             if field_etls == field_srcs:
                 self.indentical+=1
             else:
-                #self.report['errors']['num_record'][self.num_record] =  {'num_field': dict()}
                 num_field = 0
                 for field_etl, field_src in zip(field_etls, field_srcs):
-                    
                     if field_etl != field_src:
                         if num_field in self.report['errors']['num_field']:
-                            
                             #self.report['errors']['num_field'][num_field]['num_record'] = self.num_record 
                             self.report['errors']['num_field'][num_field]['num_record'][self.num_record] = {
-                                                                                'name_field' : names[num_field] if names[0] != "" else "",
                                                                                 'etl_value':field_etl,
                                                                                 'src_value': field_src
                                                                                 }
                         else:
                             self.report['errors']['num_field'][num_field] = {'num_record':{self.num_record : {
-                                                                                'name_field' : names[num_field] if names[0] != "" else "",
                                                                                 'etl_value':field_etl,
-                                                                                'src_value': field_src}}}
-
-                        # self.report['errors']['num_record'][self.num_record]['num_field'][num_field] = {
-                        #                                                     'name_field' : names[num_field] if names else "",
-                        #                                                     'etl_value':field_etl,
-                        #                                                     'src_value': field_src
-                        #                                                     }
+                                                                                'src_value': field_src},
+                                                                            },
+                                                                            'name_field':  names[num_field] if names[0] != "" else ""}
                         self.broken_attributes+=1
-                    
                     num_field+=1
             self.num_record+=1
         if not self.report['errors']['num_field']:
@@ -160,12 +199,36 @@ class FullFileComparer:
         self.report['statistics']['len_src'] = self.len_src
         return self.report
 
+
+    
+
     
     def _get_records_only(self):
         if self.len_etl > self.len_src :
             self.only_in_etl = self.len_etl - self.len_src
         elif self.len_etl < self.len_src:
             self.only_in_src = self.len_src - self.len_etl
+
+    
+    def _get_unique_key(self):
+        keys=set()
+        unique_keys = False
+        for i in range(len(self.list_etl[0])):
+            for record in self.list_etl:
+                if record[i] not in keys:
+                    keys.add(record[i])
+                else: 
+                    keys = set()
+                    break 
+            if len(keys) == len(self.list_etl):
+                unique_keys = True
+                break
+        if not unique_keys:
+            FullFileComparer.num_key = -1
+            return
+        FullFileComparer.num_key = i
+        
+ 
 
     
         
@@ -209,6 +272,11 @@ class CompareFactory:
         if self.header:
             self.report['header'] = self.header.compare(setting.HEADER_NAMES)
         if self.body:
+            if FullFileComparer.num_key == 0:
+                self.body._get_unique_key()
+            if FullFileComparer.num_key > 0:
+                self.list_etl = self.body.list_etl.sort(key = lambda row: row[FullFileComparer.num_key])
+                self.list_src = self.body.list_src.sort(key = lambda row: row[FullFileComparer.num_key])
             self.report['body'] = self.body.compare(setting.BODY_NAMES)
         if self.trailer:
             self.report['trailer'] = self.trailer.compare(setting.TRAILER_NAMES)
@@ -240,7 +308,7 @@ class ReportAll:
 
     def __init__(self, comparer) -> None:
         self.filename = comparer.filename
-        self.errors = [error['errors'] for error in comparer.report.values() if error['errors'] != None]
+        self.errors = {part_name:error['errors'] for part_name, error in comparer.report.items() if error['errors'] != None}
         self.totals = [total['statistics'] for total in comparer.report.values()]
         self.record_len_etl = 0
         self.record_len_src = 0
@@ -281,14 +349,18 @@ class ReportAll:
                 
 
     def create_file_errors_report(self):
-        for errors in self.errors:
-
+        for part_name, errors in self.errors.items():
+            res_folder = join(f"{setting.RES}_{str(self.date)}")
+            if not exists(res_folder):
+                os.mkdir(res_folder)
+            part_folder = join(res_folder, part_name)
+            if not exists(part_folder):
+                os.mkdir(part_folder)
             for num_fields, num_records  in errors['num_field'].items():
-                with open( f'num_fields_{num_fields}', 'w+') as report_file: 
+                with open(join(part_folder, f'num_fields_{num_fields}_{num_records['name_field']}.report'), 'w+') as report_file: 
                     report_file.write("{};\n".format(self.filename))
                     for num_record,value  in num_records['num_record'].items():
                         report_file.write("  num_record: {};\n".format(num_record))
-                        #report_file.write("  num_field: {};\n".format(num_field))
                         for name, value_field in value.items():
                             report_file.write("   {} : {}\n".format(name, value_field))
     
@@ -346,8 +418,13 @@ def main(etalon_path, source_path, list_files):
     #     with open(FILENAME_FORMAT, "w") as file:
     #         json.dump(FILE_STRUCTURE, file)
     #     return print("Заполнить файл formats.json")
-    full_compare = True
-    filePrerare = FilePrepare(setting.HEADER_SIZE, setting.BODY_SIZE, setting.TRAILER_SIZE, full=full_compare, prepare_etl=False)
+    if setting.TYPE_DELIMITER == 'char':
+        filePrerare = FilePrepareDel(setting.DELIMITER, prepare_etl=False)
+
+    elif setting.TYPE_DELIMITER == 'fields':
+        filePrerare = FilePrepare(setting.HEADER_SIZE, setting.BODY_SIZE, setting.TRAILER_SIZE,  prepare_etl=False)
+    else:
+        return
     for filename in list_files:
         etl = GetRecordsFile(etalon_path, filename)
         src = GetRecordsFile(source_path, filename)
@@ -357,13 +434,12 @@ def main(etalon_path, source_path, list_files):
         if reportAll.errors:
             reportAll.create_file_errors_report()
         reportAll.create_file_report_csv()
+    return len(list_files)
        
 
 def compare_multithreading(path_etl, path_src, list_files):
-    
     n_workers = 10
     chunksize = round(len(list_files) / n_workers)
-    #chunksize = 1
     # create the process pool
     with ThreadPoolExecutor(n_workers) as exe:
         #results = list(exe.map(move_files, files))
@@ -374,6 +450,7 @@ def compare_multithreading(path_etl, path_src, list_files):
             filenames = list_files[i:(i + chunksize)]
             results = exe.submit(main, path_etl, path_src, filenames)
             print(results.result())
+
     
 
 
