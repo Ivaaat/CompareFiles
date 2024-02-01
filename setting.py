@@ -14,20 +14,31 @@ try:
     ETL  = config['unf_output']['etalons']
     SRC  = config['unf_output']['sources']
     RES = config['unf_output']['result_dir']
+    NUM_REC_HEADER = int(config['unf_output']['num_records_header'])
+    NUM_REC_TRAILER = int(config['unf_output']['num_records_trailer'])
     try:
         HEADER_SIZE = list(map(int, config['unf_output']['field_sizes_header'].split(',')))
     except:
         HEADER_SIZE = []
-    HEADER_NAMES =  [name.strip() for name in config['unf_output']['field_names_header'].split(',')]
+    try:
+        HEADER_NAMES =  [name.strip() for name in config['unf_output']['field_names_header'].split(',')]
+    except:
+        HEADER_NAMES = []
     try:
         BODY_SIZE = list(map(int, config['unf_output']['field_sizes_body'].split(',')))
     except:
         BODY_SIZE = []
-    BODY_NAMES =  [name.strip() for name in config['unf_output']['field_names_body'].split(',')]
+    try:
+        BODY_NAMES =  [name.strip() for name in config['unf_output']['field_names_body'].split(',')]
+    except:
+        BODY_NAMES = []
     try:
         TRAILER_SIZE = list(map(int, config['unf_output']['field_sizes_trailer'].split(',')))
     except:
         TRAILER_SIZE = []
-    TRAILER_NAMES =  [name.strip() for name in config['unf_output']['field_names_trailer'].split(',')]
+    try:
+        TRAILER_NAMES =  [name.strip() for name in config['unf_output']['field_names_trailer'].split(',')]
+    except:
+        TRAILER_NAMES = []
 except KeyError:
     print('Заполни обязательные поля')
