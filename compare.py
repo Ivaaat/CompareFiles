@@ -10,6 +10,8 @@ import logging
 import multiprocessing
 import time
 from abc import ABC, abstractmethod
+import re
+import shutil
 
 
 class FilesCollection:
@@ -22,34 +24,53 @@ class FilesCollection:
         self.dict_compare = {}
         self.dict_compare['etl'] : list = []
         self.dict_compare['src'] : list = []
+        self.i = 1
+        self.counter_error_rename = 0
+        # self.names_files = defaultdict(list)
+        self.names_files = defaultdict(dict)
         
 
     def get_list_files(self) -> list: 
         if isdir(self.etl) and isdir(self.src):
             self.path_etl = os.path.abspath(self.etl)
             self.path_src = os.path.abspath(self.src)
-            for file_etl, file_src in zip(os.listdir(self.path_etl), os.listdir(self.path_src)):
+            etalon_files = os.listdir(self.path_etl)
+            source_files = os.listdir(self.path_src)
+            etalon_files.sort()
+            source_files.sort()
+            
+            for file_etl, file_src in zip(etalon_files, source_files):
+                self.names_files[re.sub(setting.REGEX_RENAME, '_.cdr', file_etl)]= {'etl':defaultdict(list), 'src':defaultdict(list)}
+                self.counter_error_rename = 0
                 self._prepare_name(file_etl, file_src)
-                #print(file_etl)
-                #self.dict_compare['etl'].append(file_etl) 
-                #self.dict_compare['src'].append(file_src)
         elif isfile(self.etl) and isfile(self.src):
             self.path_etl, self.etl = os.path.split(os.path.abspath(self.etl))
             self.path_src, self.src = os.path.split(os.path.abspath(self.src))
             self._prepare_name(self.etl, self.src)
-            # self.dict_compare['etl'].append(self.etl) 
-            # self.dict_compare['src'].append(self.src)
         else:
-            print("Сравнить можно либо папки, либо файлы")
+            print("Сравнить можно либо папки, либо файлы, проверь пути в config_comparison.ini")
         return self.file_list_compare
     
 
-    def _prepare_name(self, etl_name, src_name):
+    def _prepare_name(self, etl_name, src_name, rename = False):
+
         if etl_name == src_name:
             self.file_list_compare.append(etl_name)
+            if rename:
+                os.rename(join(self.path_etl, self.etl_name), join(self.path_etl, etl_name))
+                os.rename(join(self.path_src, self.src_name), join(self.path_src, src_name))
+                self.i+=1
         else:
-            self.dict_compare[etl_name]
-            print("Нужно выражения для обработки названия файлов")
+            if self.counter_error_rename > 0:
+                return print('файлы не равны regex не сработал')
+            self.etl_name = etl_name
+            self.src_name = src_name
+            etl_name = re.sub(setting.REGEX_RENAME, '_{}.cdr'.format(str(self.i)), etl_name)
+            src_name = re.sub(setting.REGEX_RENAME, '_{}.cdr'.format(str(self.i)), src_name)   
+            self.names_files[etl_name] = src_name if etl_name == src_name else ""
+
+            self.counter_error_rename +=1
+            self._prepare_name(etl_name, src_name, rename = True)
 
 
 class Counter:
@@ -100,19 +121,15 @@ class RecordPrepare:
     
     full_compare = False
 
-    def __init__(self, records) -> None:
+    def __init__(self, records, prepare = False) -> None:
         self.len_records = len(records)
-        self.records = records
+        self.records = records if not prepare else records[setting.NUM_REC_HEADER:-setting.NUM_REC_TRAILER]
         
         self.set_records = set(self.records)
         self.len_set_records = len(self.set_records)
         self.create_parts_document()
 
-    def _prepare_etalon(self, etl, src):
-        self.etl = etl
-        self.src = src
-        if self.prepare_etl:
-            self.etl = etl[self.num_record_header:-self.num_record_trailer]
+    
     
     def create_parts_document(self):
         if setting.HEADER_SIZE and setting.BODY_SIZE and setting.TRAILER_SIZE:
@@ -293,6 +310,8 @@ class PartsComparison:
 
     def _compare_fields(self, etl_part: InitParts, src_part: InitParts):
         self.counter.errors[etl_part.name_part] = defaultdict(list)
+        if len(src_part.compare_list) > setting.MAX_LOG_FILE:
+            return
         for src_rec in  src_part.compare_list:
             for etl_rec in etl_part.compare_list:
                 diff_field = []
@@ -305,6 +324,8 @@ class PartsComparison:
                     except IndexError:
                         break
                 if len(diff_field) == 1:
+                    if len(self.counter.errors[etl_part.name_part][diff_field[0]]) > setting.MAX_LOG_FILE:
+                        return
                     self.counter.set_attr('record_broken_attributes', 1)
                     self.counter.set_attr('record_matched', 1)
                     self.counter.errors[etl_part.name_part][diff_field[0]].append((etl_rec, src_rec))
@@ -312,15 +333,16 @@ class PartsComparison:
 
 
 class ReportAll:
-    date = datetime.now().date()
+    date = datetime.now().strftime("%d-%m-%y_%I%M%S")
 
     comparison_header = 'Comparing file;Date;Records in etalon;Records in src;Total matched by line ID;In etalon only;In src only;Records repeat in etl;Records repeat in src;Broken attributes same ID;Identical\n'
+    result_path = '{}_{}_Comparison_Result.csv'.format(setting.NAME_OUTPUT, date)
     if not exists(setting.RES):
         os.mkdir(setting.RES)
-    path_folder = join(setting.RES, f'result_{str(datetime.now().date())}')
-    #if not exists(path_folder):
-    os.mkdir(path_folder)
-    with open(join(path_folder, f'result_{date}.csv'), 'w+')  as csv_file: 
+    path_folder = join(setting.RES, '{}_diff_{}'.format(setting.NAME_OUTPUT, date))
+    if not exists(path_folder):
+        os.mkdir(path_folder)
+    with open(join(path_folder, result_path), 'w+')  as csv_file: 
         csv_file.write(comparison_header)
 
 
@@ -343,7 +365,7 @@ class ReportAll:
     
     
     def write_file_report_csv(self):
-        with open(join(self.path_folder, f'result_{self.date}.csv'), 'a+') as csv_file: 
+        with open(join(self.path_folder, self.result_path), 'a+') as csv_file: 
             csv_writer = csv.writer(csv_file, delimiter = ';')
             csv_writer.writerow([self.filename, 
                                     datetime.now(),
@@ -360,11 +382,8 @@ class ReportAll:
 
     def create_part_file_errors_report(self, etl_part, src_part):
         all_error_text = ''
-        #rrors = self.counter['errors']
-        #for num_field, errors in self.counter.errors.items():
-        #print(self.counter.errors[etl_part.name_part].keys())
         for num_field, errors in self.counter.errors[etl_part.name_part].items():
-            name_field = f'_{etl_part.name_fields[num_field]}' if etl_part.name_fields[0] != "" else ''
+            name_field = f'_{etl_part.name_fields[num_field]}' if etl_part.name_fields else ''
             errors_text = ''
             with open(join(self.path_folder, f'{etl_part.name_part}_num_fields_{num_field}_{name_field}.report'), 'a+') as report_file:
                 report_file.write('\nDiff in file:{}\nrecord_only_in_etl:{}\nrecord_only_in_src:{}\n'.format(self.filename, len(etl_part.compare_list), len(src_part.compare_list)))
@@ -383,7 +402,7 @@ class ReportAll:
     
     @classmethod
     def write_total_record(cls):
-        with open(join(cls.path_folder, f'result_{cls.date}.csv'), 'a+') as csv_file: 
+        with open(join(cls.path_folder, cls.result_path), 'a+') as csv_file: 
             csv_writer = csv.writer(csv_file, delimiter= ';')
             csv_writer.writerow(['TOTAL', 
                                 datetime.now(),
@@ -398,6 +417,7 @@ class ReportAll:
                                 Counter.total_dict['record_indentical'],
                                 '{0:.2f}%'.format((Counter.total_dict['record_indentical']/Counter.total_dict['record_len_etl'])*100),
                                 '{0:.2f}%'.format((Counter.total_dict['record_broken_attributes']/Counter.total_dict['record_len_etl'])*100)])
+            csv_file.write(cls.comparison_header)
             
 
 class CompareCommand:
@@ -472,14 +492,15 @@ list_files = files.get_list_files()
 
 
 if __name__ == '__main__':
-    start = time.time()    
-    if len(list_files) > 1000:
-        compare_multipocessing(files.path_etl, files.path_src, list_files)
-    elif len(list_files) > 100:
-        compare_multithreading(files.path_etl, files.path_src, list_files)
-    else:
-        main(files.path_etl, files.path_src, list_files)
-    ReportAll.write_total_record()
+    start = time.time() 
+    if list_files:   
+        if len(list_files) > 1000:
+            compare_multipocessing(list_files)
+        elif len(list_files) > 100:
+            compare_multithreading(list_files)
+        else:
+            main(list_files)
+        ReportAll.write_total_record()
     print(time.time() - start)
 
         
