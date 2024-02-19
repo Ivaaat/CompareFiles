@@ -12,8 +12,8 @@ config.read(INI_FILE)
 try:
     
     TYPE_DELIMITER = config['general']['type_delimiter']
-    PREPARE_ETL = config['general']['prepare_etalon']
-    PREPARE_SRC = config['general']['prepare_source']
+    PREPARE_ETL = False if config['general']['prepare_etalon'] == 'False' else True
+    PREPARE_SRC = False if config['general']['prepare_source'] == 'False' else True
     MAX_LOG_FILE = int(config['general']['log_file_max_size']) 
     REGEX_RENAME = config['general']['regex_rename_files'] 
 
