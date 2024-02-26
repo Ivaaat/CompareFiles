@@ -1,4 +1,5 @@
 *.csv
+*.cdr
 *.txt
 *.ps1
 test.py
