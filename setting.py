@@ -16,6 +16,8 @@ try:
     PREPARE_SRC = False if config['general']['prepare_source'] == 'False' else True
     MAX_LOG_FILE = int(config['general']['log_file_max_size']) 
     REGEX_RENAME = config['general']['regex_rename_files'] 
+    MASK_FILES_ETALON = config['general']['mask_files_etalon']
+    MASK_FILES_SOURCE = config['general']['mask_files_source'] 
 
     NAME_OUTPUT = config['unf_output']['name_output'] 
     DELIMITER = config['unf_output']['delimiter']
