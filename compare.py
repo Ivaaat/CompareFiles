@@ -12,25 +12,22 @@ import time
 import re
 import shutil
 from logging import StreamHandler
+import logging.handlers
 import sys
 import glob
+from abc import ABC, abstractmethod
 
 
 
-logger = logging.getLogger('logger')
-logger.setLevel(logging.INFO)
-stream_handler = StreamHandler(stream=sys.stdout)
-stream_formatter = logging.Formatter('%(levelname)s. %(message)s')
-file_formatter = logging.Formatter('%(asctime)s: %(levelname)s. %(message)s')
-stream_handler.setFormatter(file_formatter)
-logger.addHandler(stream_handler)
 
 
-class File:
+
+class File(ABC):
 
     names_files = {}
     rename = False
-
+    
+    @abstractmethod
     def __init__(self, path) -> None:
         self.path = path
         self.isdir = isdir(self.path)
@@ -46,7 +43,7 @@ class File:
     
 
     def сheck_and_rename_files(self):
-        logger.info(f"Check name files {str(self)}")
+        Logger.logger.info(f"Check name files {str(self)}")
         i = 0
         for i, file in enumerate(self.path_filenames):
             filename = os.path.split(file)[1]
@@ -57,7 +54,7 @@ class File:
                     try:
                         file_name = ''.join(re.findall(self.regex, filename)[0])
                     except IndexError:
-                        logger.error('Regexp not match with the file {}.'.format(filename))
+                        Logger.logger.error('Regexp not match with the file {}.'.format(filename))
                         ReportAll.create_error_file('Regexp not match in {}'.format(str(self)) , filename)
                         print(f'Error regex in {file}')
                         continue
@@ -417,8 +414,8 @@ class PartsComparison:
 
     def _compare_fields(self, etl_part: InitParts, src_part: InitParts):
         self.counter.errors[etl_part.name_part] = defaultdict(list)
-        if len(src_part.compare_list) > setting.MAX_LOG_FILE:
-            return logger.info(f"STOP COMPARISON IN FILE {self.src.filename_new}. MAXIMUM VALUE OF RECORDS HAS BEEN EXCEEDED \"MAX_LOG_FILE\" {len(src_part.compare_list)}")
+        # if len(src_part.compare_list) > setting.MAX_LOG_FILE:
+        #     return logger.info(f"STOP COMPARISON IN FILE {self.src.filename_new}. MAXIMUM VALUE OF RECORDS HAS BEEN EXCEEDED \"MAX_LOG_FILE\" {len(src_part.compare_list)}")
         for src_rec in  src_part.compare_list.copy():
             broken_records = []
             for etl_rec in etl_part.compare_list.copy():
@@ -431,7 +428,7 @@ class PartsComparison:
                         break
                 broken_records.append([etl_rec, diff_field])
             broken_records.sort(key=lambda x: len(x[1]))
-            filter_min_broken = list(filter(lambda x: len(x[1]) == len(broken_records[0][1]), broken_records))
+            filter_min_broken = list(filter(lambda x: len(x[1]) == len(broken_records[0][1]) and len(x[1]) < 5, broken_records))
             if filter_min_broken:
                 src_part.compare_list.remove(src_rec)
                 self.counter.set_attr('record_only_in_src', -1)
@@ -440,8 +437,8 @@ class PartsComparison:
                 self.counter.set_attr('record_matched', 1)
                 self.counter.set_attr('record_only_in_etl', -1)
                 for field in broken[1]:
-                    if len(self.counter.errors[etl_part.name_part][field]) > setting.MAX_LOG_FILE:
-                        return logger.info(f"STOP COMPARISON IN FILE {self.src.filename_new}. MAXIMUM VALUE OF ATTRIBUTES HAS BEEN EXCEEDED \"MAX_LOG_FILE\" {diff_field[0]}")
+                    if len(self.counter.errors[etl_part.name_part][field]) > setting.LOG_FILE_MAX_SIZE:
+                        return Logger.logger.info(f"STOP COMPARISON IN FILE {self.src.filename_new}. MAXIMUM VALUE OF ATTRIBUTES HAS BEEN EXCEEDED \"LOG_FILE_MAX_SIZE\" {diff_field[0]}")
                     self.counter.set_attr('record_broken_attributes', 1)
                     self.counter.errors[etl_part.name_part][field].append((broken[0], src_rec))
                     try:
@@ -561,6 +558,24 @@ class ReportAll:
                     csv_writer.writerow([key, value])
 
 
+class Logger:
+    logger = logging.getLogger('logger')
+    logger.setLevel(logging.INFO)
+    stream_handler = StreamHandler(stream=sys.stdout)
+    stream_formatter = logging.Formatter('%(levelname)s. %(message)s')
+    file_formatter = logging.Formatter('%(asctime)s: %(levelname)s. %(message)s')
+    stream_handler.setFormatter(file_formatter)
+    logger.addHandler(stream_handler)
+    if setting.LOG_IN_FILE:
+        file_handler = logging.handlers.RotatingFileHandler(
+            "{}_{}.log".format(join(ReportAll.path_folder, setting.NAME_OUTPUT), ReportAll.date),
+            mode='a',
+            maxBytes=setting.LOG_FILE_MAX_SIZE * 1024 * 1024,
+            backupCount=setting.LOG_FILE_BACKUP_COUNT)
+        file_handler.setFormatter(file_formatter)
+        logger.addHandler(file_handler)
+
+
 def main(list_files):
     for filename in list_files:
         etlReader = FileReader(filename[1]['etl'], etalon.prepare, etalon.encode)
@@ -580,15 +595,15 @@ def main(list_files):
             logger_main(filename[0], counter)
         else:
             error_file = 'Etalon' if not filename[1]['etl'] else 'Source'
-            logger.error("Missing records {} for the file: {}. ".format(error_file, filename[0]))
+            Logger.logger.error("Missing records {} for the file: {}. ".format(error_file, filename[0]))
             ReportAll.create_error_file('{} missing files'.format(error_file) , filename[0])
     return Counter.total_dict
        
 def logger_main(filename:str, counter: Counter):
-        logger.info(f"Comparing file: {filename}")
-        logger.info(f"Line count ETL: {counter.record_len_etl}. Line count SRC: {counter.record_len_src}")
-        logger.info(f"Matched keys: {counter.record_matched}. Only in PiOne: {counter.record_only_in_src}. Only in Etalon: {counter.record_only_in_etl}")
-        logger.info(f"Broken attributes: {counter.record_broken_attributes}")
+        Logger.logger.info(f"Comparing file: {filename}")
+        Logger.logger.info(f"Line count ETL: {counter.record_len_etl}. Line count SRC: {counter.record_len_src}")
+        Logger.logger.info(f"Matched keys: {counter.record_matched}. Only in PiOne: {counter.record_only_in_src}. Only in Etalon: {counter.record_only_in_etl}")
+        Logger.logger.info(f"Broken attributes: {counter.record_broken_attributes}")
 
 def compare_multithreading(list_files):
     n_workers = 10
