@@ -1,14 +1,21 @@
 import configparser
 import sys
 import argparse
+from typing import Union
 
 parsers = argparse.ArgumentParser(description='Text file comparison tool',)
 parsers.prog = 'compare.py'
-parsers.add_argument(dest = 'config_file', default='config_comparison.ini')
+parsers.add_argument('-c', '--config', dest = 'config_file', default='config_comparison.ini')
 args = parsers.parse_args()
 
 config = configparser.ConfigParser()
 config.read(args.config_file)
+
+def split_param(param: Union[list, None], type_in=int) -> list:
+        if param:
+            return list(map(type_in, param.split(',')))
+        else:
+            return []
 
 try:
     #general
@@ -23,6 +30,8 @@ try:
     LOG_IN_FILE = config.getboolean('general', 'log_in_file')
     LOG_FILE_MAX_SIZE =  config.getint('general', 'log_file_max_size')
     LOG_FILE_BACKUP_COUNT = config.getint('general', 'log_file_backup_count')
+    NUM_UNIQUE_KEYS = config.getint('general', 'num_unique_keys')
+    MAX_BROKEN_ATTRIBUTES = config.getint('general', 'max_broken_attributes') 
 
     #unf_output
     NAME_OUTPUT = config['unf_output']['name_output'] 
@@ -32,22 +41,17 @@ try:
     RES = config['unf_output']['result_dir']
     NUM_REC_HEADER =  config.getint('unf_output', 'num_records_header')
     NUM_REC_TRAILER = config.getint('unf_output', 'num_records_trailer')
+    EXCLUDED_FIELDS = split_param(config['unf_output'].get('excluded_fields'))
     
-
-    def split_param(param, type_in=int):
-        if param:
-            return list(map(type_in, param.split(',')))
-        else:
-            return param
     #fields
-    HEADER_SIZE = split_param(config['unf_output'].get('field_sizes_header', []))
-    HEADER_NAMES = split_param(config['unf_output'].get('field_sizes_header', []), str) 
+    HEADER_SIZE = split_param(config['unf_output'].get('field_sizes_header'))
+    HEADER_NAMES = split_param(config['unf_output'].get('field_sizes_header'), str) 
 
-    BODY_SIZE = split_param(config['unf_output'].get('field_sizes_body', []))
-    BODY_NAMES = split_param(config['unf_output'].get('field_names_body', []), str)
+    BODY_SIZE = split_param(config['unf_output'].get('field_sizes_body'))
+    BODY_NAMES = split_param(config['unf_output'].get('field_names_body'), str)
     
-    TRAILER_SIZE = split_param(config['unf_output'].get('field_sizes_trailer', []))
-    TRAILER_NAMES = split_param(config['unf_output'].get('field_names_body', []), str)
+    TRAILER_SIZE = split_param(config['unf_output'].get('field_sizes_trailer'))
+    TRAILER_NAMES = split_param(config['unf_output'].get('field_names_body'), str)
    
 except KeyError as e:
     print('Заполни обязательный параметр в {}! --> {}'.format(args.config_file, e))

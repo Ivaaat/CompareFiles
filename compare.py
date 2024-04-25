@@ -199,11 +199,8 @@ class FileReader:
         self.records = []
         for file in filenames:
             with codecs.open(file, 'r', encoding=encode) as f:
-                if setting.TYPE_DELIMITER == 'fields':
-                    self.records += f.readlines() if not prepare else f.readlines()[setting.NUM_REC_HEADER:-setting.NUM_REC_TRAILER]
-                else:
-                    if prepare: next(f)
-                    self.records += [row[0] for row in csv.reader(f)]
+                self.records += f.readlines() if not prepare else f.readlines()[setting.NUM_REC_HEADER:-setting.NUM_REC_TRAILER]
+                
 
 
 
@@ -257,7 +254,6 @@ class InitParts:
         self.repeated_elements = {}
         self.num_record_dict = {}
         self.diff_res =  set()
-        self.compare_list = []
         self.compare_list = []
         line_numbers = {}  # Словарь для хранения номеров строк
         line_counts = {}   # Словарь для подсчета повторений строк
@@ -384,6 +380,8 @@ class RecordSeparation:
                     continue
 
     def _difference_part(self, etl_part: InitParts, src_part: InitParts):
+        self.counter.set_attr('record_repeated_in_etl', etl_part.len_repeat_records)
+        self.counter.set_attr('record_repeated_in_src', src_part.len_repeat_records)
         etl_part.diff_res = etl_part.num_record_dict.keys() - src_part.num_record_dict.keys() 
         src_part.diff_res = src_part.num_record_dict.keys() - etl_part.num_record_dict.keys() 
         self.intersection = etl_part.num_record_dict.keys() & src_part.num_record_dict.keys()
@@ -414,13 +412,13 @@ class PartsComparison:
 
     def _compare_fields(self, etl_part: InitParts, src_part: InitParts):
         self.counter.errors[etl_part.name_part] = defaultdict(list)
-        # if len(src_part.compare_list) > setting.MAX_LOG_FILE:
-        #     return logger.info(f"STOP COMPARISON IN FILE {self.src.filename_new}. MAXIMUM VALUE OF RECORDS HAS BEEN EXCEEDED \"MAX_LOG_FILE\" {len(src_part.compare_list)}")
         for src_rec in  src_part.compare_list.copy():
             broken_records = []
             for etl_rec in etl_part.compare_list.copy():
                 diff_field = []
                 for i in range(len(etl_part.size_fields)):
+                    if i in setting.EXCLUDED_FIELDS:
+                        continue
                     try:
                         if src_rec[1][i] != etl_rec[1][i]:
                             diff_field.append(i)
@@ -428,19 +426,20 @@ class PartsComparison:
                         break
                 broken_records.append([etl_rec, diff_field])
             broken_records.sort(key=lambda x: len(x[1]))
-            filter_min_broken = list(filter(lambda x: len(x[1]) == len(broken_records[0][1]) and len(x[1]) < 5, broken_records))
-            if filter_min_broken:
+            if len(broken_records[0][1]) < setting.NUM_UNIQUE_KEYS:
                 src_part.compare_list.remove(src_rec)
                 self.counter.set_attr('record_only_in_src', -1)
-            for broken in filter_min_broken:
-                etl_part.compare_list.remove(broken[0])
+                etl_part.compare_list.remove(broken_records[0][0])
                 self.counter.set_attr('record_matched', 1)
                 self.counter.set_attr('record_only_in_etl', -1)
-                for field in broken[1]:
-                    if len(self.counter.errors[etl_part.name_part][field]) > setting.LOG_FILE_MAX_SIZE:
-                        return Logger.logger.info(f"STOP COMPARISON IN FILE {self.src.filename_new}. MAXIMUM VALUE OF ATTRIBUTES HAS BEEN EXCEEDED \"LOG_FILE_MAX_SIZE\" {diff_field[0]}")
+                for field in broken_records[0][1]:
+                    if len(self.counter.errors[etl_part.name_part][field]) > setting.MAX_BROKEN_ATTRIBUTES:
+                        if field not in setting.EXCLUDED_FIELDS:
+                            setting.EXCLUDED_FIELDS.append(field)
+                        Logger.logger.info(f"{self.src.filename_new}. THE MAXIMUM VALUE OF ATTRIBUTES IS EXCEEDED \"MAX_BROKEN_ATTRIBUTES\" Name: {etl_part.name_fields[field]}  Num: {field}")
+                        break
                     self.counter.set_attr('record_broken_attributes', 1)
-                    self.counter.errors[etl_part.name_part][field].append((broken[0], src_rec))
+                    self.counter.errors[etl_part.name_part][field].append((broken_records[0][0], src_rec))
                     try:
                         name_field = '{}'.format(etl_part.name_fields[field])
                     except IndexError:
@@ -452,7 +451,6 @@ class PartsComparison:
 
 class ReportAll:
     date = datetime.now().strftime("%d-%m-%y_%H%M%S")
-
     comparison_header = 'Comparing file;Date;Records in etalon;Records in src;Total matched by line ID;In etalon only;In src only;Records repeat in etl;Records repeat in src;Broken attributes same ID;Identical\n'
     result_path = '{}_{}_Comparison_Result.csv'.format(setting.NAME_OUTPUT, date)
     if not exists(setting.RES):
