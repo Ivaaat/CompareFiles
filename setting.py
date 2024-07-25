@@ -39,14 +39,8 @@ try:
     ETL  = config['unf_output']['etalons']
     SRC  = config['unf_output']['sources']
     RES = config['unf_output']['result_dir']
-    try:
-        NUM_REC_HEADER =  config.getint('unf_output', 'num_records_header')
-    except ValueError:
-        NUM_REC_HEADER = None
-    try: 
-        NUM_REC_TRAILER = config.getint('unf_output', 'num_records_trailer')
-    except ValueError:
-        NUM_REC_TRAILER = None
+    NUM_REC_HEADER =  config.getint('unf_output', 'num_records_header', fallback=0)
+    NUM_REC_TRAILER = config.getint('unf_output', 'num_records_trailer', fallback=0)
     EXCLUDED_FIELDS = split_param(config['unf_output'].get('excluded_fields'))
     
     #fields
