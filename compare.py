@@ -17,9 +17,7 @@ import sys
 import glob
 from abc import ABC, abstractmethod
 
-
-
-
+log_queue = multiprocessing.Queue()
 
 
 class File(ABC):
@@ -421,7 +419,7 @@ class PartsComparison:
         self.counter = counter
 
 
-    def execute(self):
+    def execute(self, b, l):
         if PartsFactory.full_compare:
             self._compare_fields(self.etl.header, self.src.header)
             self._compare_fields(self.etl.body, self.src.body)
@@ -429,7 +427,7 @@ class PartsComparison:
         else:
             #self.compare_hashlib(self.etl.body, self.src.body)
             #self._compare_keys(self.etl.body, self.src.body)
-            self._compare_fields(self.etl.body, self.src.body)
+            self._compare_fields(self.etl.body, self.src.body, b , l)
 
     def compare_hashlib(self, etl_part: InitParts, src_part: InitParts):
         import hashlib
@@ -491,7 +489,7 @@ class PartsComparison:
      
                    
 
-    def _compare_fields(self, etl_part: InitParts, src_part: InitParts):
+    def _compare_fields(self, etl_part: InitParts, src_part: InitParts, b, l):
         self.counter.errors[etl_part.name_part] = defaultdict(list)
         max_broken_list = []
         for src_rec in  src_part.compare_list.copy():
@@ -527,12 +525,14 @@ class PartsComparison:
                 self.counter.set_attr('record_only_in_etl', -1)
                 for field in broken_records[0][1]:
                     #self.counter.set_attr('record_broken_attributes', 1)
-                    if len(self.counter.errors[etl_part.name_part][field]) > setting.MAX_BROKEN_ATTRIBUTES:
-                        if field not in max_broken_list:
-                            max_broken_list.append(field)
+                    #print(b[field])
+                    if b[etl_part.name_fields[field]] > setting.MAX_BROKEN_ATTRIBUTES:
+                        if field not in l:
+                            l.append(field)
                             Logger.logger.info(f"{self.src.filename_new}. THE MAXIMUM VALUE OF ATTRIBUTES IS EXCEEDED \"MAX_BROKEN_ATTRIBUTES\" Name: {etl_part.name_fields[field]}  Num: {field}")
                         continue
                     self.counter.set_attr('record_broken_attributes', 1)
+                    b[etl_part.name_fields[field]] += 1
                     self.counter.errors[etl_part.name_part][field].append((broken_records[0][0], src_rec))
                     try:
                         name_field = '{}'.format(etl_part.name_fields[field])
@@ -673,19 +673,21 @@ class Logger:
         logger.addHandler(file_handler)
 
 
-def main(list_files):
+def main(list_files, b, l):
+    
     for filename in list_files:
+        
         etlReader = FileReader(filename[1]['etl'], etalon.prepare, etalon.encode)
         srcReader = FileReader(filename[1]['src'], source.prepare, source.encode)
         if filename[1]['etl'] and filename[1]['src']:
-            counter = Counter()
             etl = PartsFactory(etlReader, etalon.new_path, filename[0])
+            counter = Counter()
             src = PartsFactory(srcReader, source.new_path, filename[0])
             differentRecords = RecordSeparation(etl, src, counter)
             differentRecords.difference_types()
             logger_stat(filename[0], counter)
             comparer = PartsComparison(etl, src, counter)
-            comparer.execute()
+            comparer.execute(b, l)
             reportAll = ReportAll(etl, src, counter, filename[0])
             if counter.errors:
                 reportAll.create_file_errors_report()
@@ -698,14 +700,16 @@ def main(list_files):
     return Counter.total_dict
 
 def logger_stat(filename, counter):
-        Logger.logger.info(f"Comparing file: {filename}")
-        Logger.logger.info(f"Line count ETL: {counter.record_len_etl}. Line count SRC: {counter.record_len_src}")       
+        log_queue.put(f"Comparing file: {filename}")
+        log_queue.put(f"Line count ETL: {counter.record_len_etl}. Line count SRC: {counter.record_len_src}")
+        #Logger.logger.info(f"Comparing file: {filename}")
+        #Logger.logger.info(f"Line count ETL: {counter.record_len_etl}. Line count SRC: {counter.record_len_src}")       
 
 def logger_main(filename:str, counter: Counter):
-        #Logger.logger.info(f"Comparing file: {filename}")
-        #Logger.logger.info(f"Line count ETL: {counter.record_len_etl}. Line count SRC: {counter.record_len_src}")
-        Logger.logger.info(f"Matched keys: {counter.record_matched}. Only in PiOne: {counter.record_only_in_src}. Only in Etalon: {counter.record_only_in_etl}")
-        Logger.logger.info(f"Broken attributes: {counter.record_broken_attributes}")
+        log_queue.put(f"Matched keys: {counter.record_matched}. Only in PiOne: {counter.record_only_in_src}. Only in Etalon: {counter.record_only_in_etl}")
+        log_queue.put(f"Broken attributes: {counter.record_broken_attributes}")
+        #Logger.logger.info(f"Matched keys: {counter.record_matched}. Only in PiOne: {counter.record_only_in_src}. Only in Etalon: {counter.record_only_in_etl}")
+        #Logger.logger.info(f"Broken attributes: {counter.record_broken_attributes}")
 
 def compare_multithreading(list_files):
     n_workers = 10
@@ -732,19 +736,54 @@ def compare_multipocessing(list_files):
             Counter.total_dict[keys] += res[keys]
     return result
 
+def new_compare_multipocessing(list_files):
+    n_workers = multiprocessing.cpu_count()
+    chunksize = round(len(list_files) / n_workers) + 1
+    #p = multiprocessing.Process(target=main, args=(list_files)).start()
+    processes = []
+    with multiprocessing.Manager() as m:
+        b = m.dict()
+        l = m.list()
+        for attr_name in setting.BODY_NAMES:
+            b[attr_name] = 0
+        #with multiprocessing.Pool() as pool:
+        for i in range(0, len(list_files), chunksize):
+            p = multiprocessing.Process(target=main, args=(list_files[i:(i + chunksize)], b, l), daemon=True)
+            processes.append(p)
+            p.start()
+        for ps in processes:
+            result = ps.join()
+            #result = pool.starmap(main, filenames)
+    #result = p.join()
+        for keys in Counter.total_dict.keys():
+            for res in result:
+                Counter.total_dict[keys] += res[keys]
+    return result
 
+def log_writer(queue):
+    while True:
+        msg = queue.get()
+        print(msg)
+        Logger.logger.info(msg)
+
+etalon = Etalon(setting.ETL)
+source = Source(setting.SRC)
+for attr_name in setting.BODY_NAMES:
+    Counter.total_dict[attr_name] = 0
 if __name__ == '__main__':
-    etalon = Etalon(setting.ETL)
-    source = Source(setting.SRC)
+    
     files = FilesFactory()
     collect = files.create_collect(etalon, source)
     collect.get_files()
     list_files = list(File.names_files.items())
     start = time.time() 
-    if list_files:   
-        for attr_name in setting.BODY_NAMES:
-            Counter.total_dict[attr_name] = 0
-        if len(list_files) > 500:
+    if list_files:  
+        #main(list_files) 
+        
+        if len(list_files) > 10:
+            #new_compare_multipocessing(list_files)
+            compare_multipocessing(list_files)
+        elif len(list_files) > 500:
             compare_multipocessing(list_files)
         elif len(list_files) > 100:
             compare_multithreading(list_files)
