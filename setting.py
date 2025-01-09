@@ -31,7 +31,8 @@ try:
     LOG_FILE_MAX_SIZE =  config.getint('general', 'log_file_max_size')
     LOG_FILE_BACKUP_COUNT = config.getint('general', 'log_file_backup_count')
     NUM_UNIQUE_KEYS = config.getint('general', 'num_unique_keys')
-    MAX_BROKEN_ATTRIBUTES = config.getint('general', 'max_broken_attributes') 
+    MAX_BROKEN_ATTRIBUTES = config.getint('general', 'max_broken_attributes')
+    COMPARE_STRATEGY = config.get('general', 'compare_strategy')
 
     #unf_output
     NAME_OUTPUT = config['unf_output']['name_output'] 

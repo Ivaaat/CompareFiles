@@ -3,7 +3,6 @@ import csv
 from datetime import datetime
 import codecs
 from os.path import join, isfile, isdir, exists
-from concurrent.futures import ThreadPoolExecutor
 import os
 from collections import defaultdict
 import logging
@@ -18,191 +17,6 @@ import glob
 from abc import ABC, abstractmethod
 from typing import List, Union
 
-
-
-
-
-
-class Files:
-
-    names_files = set()
-    rename = False
-    
-    def __init__(self) -> None:
-        self.path: str
-        self.mask_files: str
-        self.isdir = isdir(self.path)
-        self.isfile = isfile(self.path)
-        self.regex = setting.REGEX_RENAME
-        self.new_path = ''
-        self.files = {}
-        
-
-    def get_files_dir(self):
-        self.path = os.path.abspath(self.path)
-        self.path_filenames = glob.glob(join(self.path, self.mask_files))
-        self.filenames = [os.path.split(file)[1] for file in self.path_filenames]
-    
-
-    def сheck_and_rename_files(self):
-        Logger.logger.info(f"Check name files {str(self)}")
-        for i, file in enumerate(self.path_filenames, 1):
-            filename = os.path.split(file)[1]
-            if isfile(file):
-                Logger.logger.info(f'Check {i} = {file}')
-                if Files.rename:
-                    try:
-                        file_name = ''.join(re.findall(self.regex, filename)[0])
-                    except IndexError:
-                        Logger.logger.error('Regexp not match with the file {}.'.format(filename))
-                        ReportAll.create_error_file('Regexp not match in {}'.format(str(self)) , filename)
-                        print(f'Error regex in {file}')
-                        continue
-                else:
-                    file_name = os.path.split(file)[1]
-                if file_name not in self.files:
-                    self.files[file_name] =  []
-                self.files[file_name].append(file)
-                Files.names_files.add(file_name)
-                
-                
-
-
-    def _create_new_folder(self) :
-        self.new_path = '{}_{}_compare'.format(self.path, re.sub(r'[\\/*?:"<>|]',"", self.mask_files))
-        if not exists(self.new_path):
-            os.mkdir(self.new_path)
-        else:
-            ask = input(f'Delete {self.new_path} folder? y/n: ')
-            if ask == 'y':
-                shutil.rmtree(self.new_path)
-                os.mkdir(self.new_path)
-            elif ask == 'n':
-                pass
-            else:
-                self._create_new_folder()
-
-
-class EtalonFiles(Files):
-    
-    def __init__(self) -> None:
-        self.path = setting.ETL
-        self.mask_files = setting.MASK_FILES_ETALON
-        super().__init__()
-
-    
-    def __str__(self) -> str:
-        return 'etl'
-
-
-
-class SourceFiles(Files):
-    
-    def __init__(self) -> None:
-        self.path = setting.SRC
-        self.mask_files = setting.MASK_FILES_ETALON
-        super().__init__()
-    
-    
-    def __str__(self) -> str:
-        return 'src'
-
-    
-
-class File:
-
-    def __init__(self) -> None:
-        self.new_path: str
-        self.records: List[str] = []
-        self.num_records = 0
-        self.unique_records = 0
-        self.num_unique_records = 0
-        self.header: Header
-        self.body: Body
-        self.trailer: Trailer
-        self.files: List[str] = []
-   
-
-
-class Etalon(File):
-    
-    def __init__(self, etalon_files: EtalonFiles) -> None:
-        super().__init__()
-        self.prepare = setting.PREPARE_ETL
-        self.encode = setting.ENCODE_FILES_ETALON
-        self.files = etalon_files.files
-        self.new_path = etalon_files.new_path
-
-
-class Source(File):
-
-    
-    def __init__(self, source_files: EtalonFiles) -> None:
-        super().__init__()
-        self.prepare = setting.PREPARE_SRC
-        self.encode = setting.ENCODE_FILES_SOURCE
-        self.files = source_files.files
-        self.new_path = source_files.new_path
-    
-
-class FileCompare:
-
-    def __init__(self, etalon: Etalon, source: Source, filename: str) -> None:
-        self.etalon = etalon
-        self.source = source
-        self.filename = filename
-        etalon.files[filename]
-        source.files[filename]
-
-class Collect:
-    def __init__(self, etalon: Files, source: Files) -> None:
-        self.etalon = etalon
-        self.source = source
-    
-
-class CollectFiles(Collect):
-
-    def __init__(self, etalon: EtalonFiles, source: SourceFiles) -> None:
-        super().__init__(etalon, source)
-    
-
-    def get_files(self):
-        self.etalon.get_files_dir()
-        self.source.get_files_dir()
-        if (set(self.etalon.filenames) ^ set(self.source.filenames)):
-            Files.rename = True 
-            self.etalon._create_new_folder()
-            self.source._create_new_folder()
-        self.etalon.сheck_and_rename_files()
-        self.source.сheck_and_rename_files()
-    
-
-class CollectFile(Collect):
-
-    def __init__(self, etalon: EtalonFiles, source: SourceFiles) -> None:
-        super().__init__(etalon, source)
-
-
-    def get_files(self):
-        filename_etl = os.path.split(self.etalon.path)[1]
-        filename_src = os.path.split(self.source.path)[1]
-        file_name = '{} | {}'.format(filename_etl, filename_src)
-        self.etalon.files[file_name] = [self.etalon.path]
-        self.source.files[file_name] = [self.source.path]
-        Files.names_files.add(file_name)
-        
-        
-
-class FilesFactory:
-
-    def __init__(self, etalon: EtalonFiles, source: SourceFiles) -> None:
-        if etalon.isdir and source.isdir:
-            self.collector = CollectFiles(etalon, source)
-        elif etalon.isfile and source.isfile:
-            self.collector = CollectFile(etalon, source)
-        else:
-            print("Сравнить можно либо папки, либо файлы, проверь пути в config_comparison.ini")
-            sys.exit()
 
 
 class Counter:
@@ -240,6 +54,287 @@ class Counter:
             new_val = getattr(self, attr) + buff
             setattr(self, attr, new_val)
             Counter.total_dict[attr] += buff
+
+
+class Report:
+    
+
+    def __init__(self) -> None:
+        Report.date = self.date = datetime.now().strftime("%d-%m-%y_%H%M%S")
+        self.comparison_header = 'Comparing file;Date;Records in etalon;Records in src;Total matched by line ID;In etalon only;In src only;Records repeat in etl;Records repeat in src;Broken attributes same ID;Identical\n'
+        self.result_path = '{}_{}_Comparison_Result.csv'.format(setting.NAME_OUTPUT, self.date)
+        if not exists(setting.RES):
+            os.mkdir(setting.RES)
+        Report.path_folder = self.path_folder =  join(setting.RES, '{}_diff_{}'.format(setting.NAME_OUTPUT, self.date))
+        Report.result_path = self.result_path
+        if not exists(self.path_folder):
+            os.mkdir(self.path_folder)
+        with open(join(self.path_folder, self.result_path), 'w+')  as csv_file: 
+            csv_file.write(self.comparison_header)
+    
+
+    def create_error_file(self, filename_error, filename):
+        with open(join(self.path_folder, '{}'.format(filename_error)), 'a+') as f:
+            f.write("{}\n".format(filename))
+
+    
+    def write_total_record(self):
+        with open(join(Report.path_folder, Report.result_path), 'a+') as f: 
+            csv_writer = csv.writer(f, delimiter= ';')
+            f.write(self.comparison_header)
+            csv_writer.writerow([
+                                 'TOTAL', 
+                                datetime.now(),
+                                Counter.total_dict['record_len_etl'],
+                                Counter.total_dict['record_len_src'],
+                                Counter.total_dict['record_matched'],
+                                Counter.total_dict['record_only_in_etl'],
+                                Counter.total_dict['record_only_in_src'],
+                                Counter.total_dict['record_repeated_in_etl'],
+                                Counter.total_dict['record_repeated_in_src'],
+                                Counter.total_dict['record_broken_attributes'],
+                                Counter.total_dict['record_indentical'],
+                                '{0:.2f}%'.format((Counter.total_dict['record_indentical']/Counter.total_dict['record_len_etl'])*100),
+                                '{0:.2f}%'.format((Counter.total_dict['record_broken_attributes']/Counter.total_dict['record_len_etl'] * len(setting.BODY_NAMES))*100)])
+            print('TOTAL:')
+            print('\n'.join(['{}: {}'.format(attr,str(value)) for attr, value in Counter.total_dict.items() if attr.startswith('record_')]) )
+            csv_writer.writerow(['Field', 'Number Errors'])
+            for key, value in Counter.total_dict.items():
+                if not key.startswith('record_') and value != 0:
+                    csv_writer.writerow([key, value])
+
+
+class Logger:
+    
+
+    def __init__(self):
+        self.logger = logging.getLogger('logger')
+        self.logger.setLevel(logging.INFO)
+        stream_handler = StreamHandler(stream=sys.stdout)
+        stream_formatter = logging.Formatter('%(levelname)s. %(message)s')
+        file_formatter = logging.Formatter('%(asctime)s: %(levelname)s. %(message)s')
+        stream_handler.setFormatter(file_formatter)
+        self.logger.addHandler(stream_handler)
+        if setting.LOG_IN_FILE:
+            file_handler = logging.handlers.RotatingFileHandler(
+                "{}_{}.log".format(join(Report.path_folder, setting.NAME_OUTPUT), Report.date),
+                mode='a',
+                maxBytes=setting.LOG_FILE_MAX_SIZE * 1024 * 1024,
+                backupCount=setting.LOG_FILE_BACKUP_COUNT)
+            file_handler.setFormatter(file_formatter)
+            self.logger.addHandler(file_handler)
+
+
+    def logger_stat(self, filename, counter: Counter):
+            self.logger.info(f"Comparing file: {filename}")
+            self.logger.info(f"Line count ETL: {counter.record_len_etl}. Line count SRC: {counter.record_len_src}")       
+
+
+    def logger_main(self, counter: Counter):
+            self.logger.info(f"Matched keys: {counter.record_matched}. Only in PiOne: {counter.record_only_in_src}. Only in Etalon: {counter.record_only_in_etl}")
+            self.logger.info(f"Broken attributes: {counter.record_broken_attributes}")
+
+
+
+
+
+
+class Files:
+
+    names_files = set()
+    rename = False
+    
+    def __init__(self, logger: Logger, report: Report) -> None:
+        self.path: str
+        self.mask_files: str
+        self.isdir = isdir(self.path)
+        self.isfile = isfile(self.path)
+        self.regex = setting.REGEX_RENAME
+        self.new_path = ''
+        self.files = {}
+        self.logger = logger.logger
+        self.report = report
+
+    
+    def get_files_dir(self):
+        self.path = os.path.abspath(self.path)
+        self.path_filenames = glob.glob(join(self.path, self.mask_files))
+        self.filenames = [os.path.split(file)[1] for file in self.path_filenames]
+
+
+    def сheck_and_rename_files(self):
+        self.logger.info(f"Check name files {str(self)}")
+        for i, file in enumerate(self.path_filenames, 1):
+            filename = os.path.split(file)[1]
+            if isfile(file):
+                self.logger.info(f'Check {i} = {file}')
+                if Files.rename:
+                    try:
+                        file_name = ''.join(re.findall(self.regex, filename)[0])
+                    except IndexError:
+                        self.logger.error('Regexp not match with the file {}.'.format(filename))
+                        self.report.create_error_file('Regexp not match in {}'.format(str(self)) , filename)
+                        continue
+                else:
+                    file_name = os.path.split(file)[1]
+                if file_name not in self.files:
+                    self.files[file_name] =  []
+                self.files[file_name].append(file)
+                Files.names_files.add(file_name)
+                
+                
+
+
+    def _create_new_folder(self) :
+        self.new_path = '{}_{}_compare'.format(self.path, re.sub(r'[\\/*?:"<>|]',"", self.mask_files))
+        if not exists(self.new_path):
+            os.mkdir(self.new_path)
+        else:
+            ask = input(f'Delete {self.new_path} folder? y/n: ')
+            if ask == 'y':
+                shutil.rmtree(self.new_path)
+                os.mkdir(self.new_path)
+            elif ask == 'n':
+                pass
+            else:
+                self._create_new_folder()
+
+
+class EtalonFiles(Files):
+    
+    def __init__(self, logger: Logger, report: Report) -> None:
+        self.path = setting.ETL
+        self.mask_files = setting.MASK_FILES_ETALON
+        super().__init__(report, logger)
+
+    
+    def __str__(self) -> str:
+        return 'etl'
+
+
+
+class SourceFiles(Files):
+    
+    def __init__(self, logger: Logger, report: Report) -> None:
+        self.path = setting.SRC
+        self.mask_files = setting.MASK_FILES_ETALON
+        super().__init__(report, logger)
+    
+    
+    def __str__(self) -> str:
+        return 'src'
+    
+
+class FileCollector(ABC):
+
+    def __init__(self, etalon: EtalonFiles, source: SourceFiles) -> None:
+        self.etalon = etalon
+        self.source = source
+
+
+    @abstractmethod
+    def collect_files(self):
+        pass
+
+
+    
+    
+    
+
+class CollectFiles(FileCollector):
+
+    def __init__(self, etalon: EtalonFiles, source: SourceFiles) -> None:
+        super().__init__(etalon, source)
+    
+
+    def collect_files(self):
+        self.etalon.get_files_dir()
+        self.source.get_files_dir()
+        if (set(self.etalon.filenames) ^ set(self.source.filenames)):
+            Files.rename = True 
+            self.etalon._create_new_folder()
+            self.source._create_new_folder()
+        self.etalon.сheck_and_rename_files()
+        self.source.сheck_and_rename_files()
+    
+
+class CollectFile(FileCollector):
+
+    def __init__(self, etalon: EtalonFiles, source: SourceFiles) -> None:
+        super().__init__(etalon, source)
+
+
+    def collect_files(self):
+        filename_etl = os.path.split(self.etalon.path)[1]
+        filename_src = os.path.split(self.source.path)[1]
+        file_name = '{} | {}'.format(filename_etl, filename_src)
+        self.etalon.files[file_name] = [self.etalon.path]
+        self.source.files[file_name] = [self.source.path]
+        Files.names_files.add(file_name)
+        
+        
+
+class FileCollectorFactory:
+
+    @staticmethod
+    def create_collector(etalon: EtalonFiles, source: SourceFiles):
+        if etalon.isdir and source.isdir:
+            return CollectFiles(etalon, source)
+        elif etalon.isfile and source.isfile:
+            return CollectFile(etalon, source)
+        else:
+            print("Сравнить можно либо папки, либо файлы, проверь пути в config_comparison.ini")
+            sys.exit()
+
+
+class File:
+
+    def __init__(self) -> None:
+        self.new_path: str
+        self.records: List[str] = []
+        self.num_records = 0
+        self.unique_records = 0
+        self.num_unique_records = 0
+        self.header: Header
+        self.body: Body
+        self.trailer: Trailer
+        self.files: List[str] = []
+   
+
+
+class Etalon(File):
+    
+    def __init__(self, etalon_files: EtalonFiles) -> None:
+        super().__init__()
+        self.prepare = setting.PREPARE_ETL
+        self.encode = setting.ENCODE_FILES_ETALON
+        self.files = etalon_files.files
+        self.new_path = etalon_files.new_path
+
+
+class Source(File):
+    
+    def __init__(self, source_files: SourceFiles) -> None:
+        super().__init__()
+        self.prepare = setting.PREPARE_SRC
+        self.encode = setting.ENCODE_FILES_SOURCE
+        self.files = source_files.files
+        self.new_path = source_files.new_path
+    
+
+class FileCompare:
+
+    def __init__(self, etalon: Etalon, source: Source, filename: str) -> None:
+        self.etalon = etalon
+        self.source = source
+        self.filename = filename
+        etalon.files[filename]
+        source.files[filename]
+
+
+
+
+
     
 
 class FileReader:
@@ -467,18 +562,18 @@ class PartsComparison:
         self.filename = file.filename
 
 
-    def execute(self):
+    def execute(self, logger: logging):
         if PartsFactory.full_compare:
-            self._compare_fields(self.etl.header, self.src.header)
-            self._compare_fields(self.etl.body, self.src.body)
-            self._compare_fields(self.etl.trailer, self.src.trailer)
+            self._compare_fields(self.etl.header, self.src.header, logger)
+            self._compare_fields(self.etl.body, self.src.body, logger)
+            self._compare_fields(self.etl.trailer, self.src.trailer, logger)
         else:
-            self._compare_fields(self.etl.body, self.src.body)
+            self._compare_fields(self.etl.body, self.src.body, logger)
 
     
 
 
-    def _compare_fields(self, etl_part: Union[Header, Body, Trailer], src_part: Union[Header, Body, Trailer]):
+    def _compare_fields(self, etl_part: Union[Header, Body, Trailer], src_part: Union[Header, Body, Trailer], logger: logging):
         self.counter.errors[etl_part.name_part] = defaultdict(list)
         max_broken_list = []
         src_gen = (x for x in src_part.compare_list.copy())
@@ -518,7 +613,7 @@ class PartsComparison:
                     if len(self.counter.errors[etl_part.name_part][field]) > setting.MAX_BROKEN_ATTRIBUTES:
                         if field not in max_broken_list:
                             max_broken_list.append(field)
-                            Logger.logger.info(f"{self.filename}. THE MAXIMUM VALUE OF ATTRIBUTES IS EXCEEDED \"MAX_BROKEN_ATTRIBUTES\" Name: {etl_part.name_fields[field]}  Num: {field}")
+                            logger.info(f"{self.filename}. THE MAXIMUM VALUE OF ATTRIBUTES IS EXCEEDED \"MAX_BROKEN_ATTRIBUTES\" Name: {etl_part.name_fields[field]}  Num: {field}")
                         continue
                     self.counter.set_attr('record_broken_attributes', 1)
                     self.counter.errors[etl_part.name_part][field].append((broken_records[0][0], src_rec))
@@ -529,40 +624,16 @@ class PartsComparison:
                     Counter.total_dict[name_field]+=1
 
 
-        
+class ReportFile:
 
-
-class ReportAll:
-    # date = datetime.now().strftime("%d-%m-%y_%H%M%S")
-    # comparison_header = 'Comparing file;Date;Records in etalon;Records in src;Total matched by line ID;In etalon only;In src only;Records repeat in etl;Records repeat in src;Broken attributes same ID;Identical\n'
-    # result_path = '{}_{}_Comparison_Result.csv'.format(setting.NAME_OUTPUT, date)
-    # if not exists(setting.RES):
-    #     os.mkdir(setting.RES)
-    # path_folder = join(setting.RES, '{}_diff_{}'.format(setting.NAME_OUTPUT,  date))
-    # if not exists(path_folder):
-    #     os.mkdir(path_folder)
-    # with open(join(path_folder, result_path), 'w+')  as csv_file: 
-    #     csv_file.write(comparison_header)
-
-
+    
     def __init__(self, file: FileCompare, counter: Counter) -> None:
         self.etl = file.etalon
         self.src = file.source
         self.counter = counter
         self.filename = file.filename
 
-    @classmethod
-    def create_folder_errors_report(cls):
-        date = datetime.now().strftime("%d-%m-%y_%H%M%S")
-        comparison_header = 'Comparing file;Date;Records in etalon;Records in src;Total matched by line ID;In etalon only;In src only;Records repeat in etl;Records repeat in src;Broken attributes same ID;Identical\n'
-        result_path = '{}_{}_Comparison_Result.csv'.format(setting.NAME_OUTPUT, date)
-        if not exists(setting.RES):
-            os.mkdir(setting.RES)
-        cls.path_folder = join(setting.RES, '{}_diff_{}'.format(setting.NAME_OUTPUT,  date))
-        if not exists(cls.path_folder):
-            os.mkdir(cls.path_folder)
-        with open(join(cls.path_folder, result_path), 'w+')  as csv_file: 
-            csv_file.write(comparison_header)
+        
 
 
     def create_file_errors_report(self):
@@ -575,7 +646,7 @@ class ReportAll:
     
     
     def write_file_report_csv(self):
-        with open(join(self.path_folder, self.result_path), 'a+') as csv_file: 
+        with open(join(Report.path_folder, Report.result_path), 'a+') as csv_file: 
             csv_writer = csv.writer(csv_file, delimiter = ';')
             csv_writer.writerow([self.filename, 
                                 datetime.now().strftime("%d-%m-%y_%H%M%S"),
@@ -593,10 +664,9 @@ class ReportAll:
     def create_part_file_errors_report(self, etl_part: Union[Header, Body, Trailer], src_part: Union[Header, Body, Trailer]):
         if etl_part.compare_list or src_part.compare_list:
             self._create_non_matching_file_records(etl_part, src_part)
-        #print(self.counter.errors[etl_part.name_part].keys())
         for num_field, errors in self.counter.errors[etl_part.name_part].items():
             name_field = f'_{etl_part.name_fields[num_field]}' if etl_part.name_fields else ''
-            with open(join(self.path_folder, f'{etl_part.name_part}_num_fields_{num_field}_{name_field}.report'), 'a+') as f:
+            with open(join(Report.path_folder, f'{etl_part.name_part}_num_fields_{num_field}_{name_field}.report'), 'a+') as f:
                 f.write('\nDiff in file:\n {}\n '.format(self.filename))
                 for value in errors:
                     f.write('*'*100)
@@ -607,7 +677,7 @@ class ReportAll:
 
 
     def _create_non_matching_file_records(self, etl_part: Union[Header, Body, Trailer], src_part: Union[Header, Body, Trailer]):
-        with open(join(self.path_folder, f'{etl_part.name_part}_non_matching_records.txt'), 'a+') as f:
+        with open(join(Report.path_folder, f'{etl_part.name_part}_non_matching_records.txt'), 'a+') as f:
             f.write('*'*100)
             f.write('\nNon-matching records in files:\n {}\n '.format(self.filename))
             f.write('\netl_len_records:{}\nrecord_only_in_etl:{}\n'.format(etl_part.len_records, len(etl_part.compare_list)))
@@ -621,84 +691,19 @@ class ReportAll:
             f.write('*'*100 + '\n\n')
 
 
-    @classmethod
-    def create_error_file(cls, filename_error, filename):
-        with open(join(cls.path_folder, '{}'.format(filename_error)), 'a+') as f:
-            f.write("{}\n".format(filename))
+        
+class Compare(ABC):
 
-
-    @classmethod
-    def write_total_record(cls):
-        with open(join(cls.path_folder, cls.result_path), 'a+') as f: 
-            csv_writer = csv.writer(f, delimiter= ';')
-            f.write(cls.comparison_header)
-            csv_writer.writerow([
-                                 'TOTAL', 
-                                datetime.now(),
-                                Counter.total_dict['record_len_etl'],
-                                Counter.total_dict['record_len_src'],
-                                Counter.total_dict['record_matched'],
-                                Counter.total_dict['record_only_in_etl'],
-                                Counter.total_dict['record_only_in_src'],
-                                Counter.total_dict['record_repeated_in_etl'],
-                                Counter.total_dict['record_repeated_in_src'],
-                                Counter.total_dict['record_broken_attributes'],
-                                Counter.total_dict['record_indentical'],
-                                '{0:.2f}%'.format((Counter.total_dict['record_indentical']/Counter.total_dict['record_len_etl'])*100),
-                                '{0:.2f}%'.format((Counter.total_dict['record_broken_attributes']/Counter.total_dict['record_len_etl'] * len(setting.BODY_NAMES))*100)])
-            print('TOTAL:')
-            print('\n'.join(['{}: {}'.format(attr,str(value)) for attr, value in Counter.total_dict.items() if attr.startswith('record_')]) )
-            csv_writer.writerow(['Field', 'Number Errors'])
-            for key, value in Counter.total_dict.items():
-                if not key.startswith('record_') and value != 0:
-                    csv_writer.writerow([key, value])
-
-
-class Logger:
-    logger = logging.getLogger('logger')
-    logger.setLevel(logging.INFO)
-    stream_handler = StreamHandler(stream=sys.stdout)
-    stream_formatter = logging.Formatter('%(levelname)s. %(message)s')
-    file_formatter = logging.Formatter('%(asctime)s: %(levelname)s. %(message)s')
-    stream_handler.setFormatter(file_formatter)
-    logger.addHandler(stream_handler)
-    if setting.LOG_IN_FILE:
-        file_handler = logging.handlers.RotatingFileHandler(
-            "{}_{}.log".format(join(ReportAll.path_folder, setting.NAME_OUTPUT), ReportAll.date),
-            mode='a',
-            maxBytes=setting.LOG_FILE_MAX_SIZE * 1024 * 1024,
-            backupCount=setting.LOG_FILE_BACKUP_COUNT)
-        file_handler.setFormatter(file_formatter)
-        logger.addHandler(file_handler)
-
-
-def logger_stat(filename, counter: Counter):
-        Logger.logger.info(f"Comparing file: {filename}")
-        Logger.logger.info(f"Line count ETL: {counter.record_len_etl}. Line count SRC: {counter.record_len_src}")       
-
-
-def logger_main(counter: Counter):
-        Logger.logger.info(f"Matched keys: {counter.record_matched}. Only in PiOne: {counter.record_only_in_src}. Only in Etalon: {counter.record_only_in_etl}")
-        Logger.logger.info(f"Broken attributes: {counter.record_broken_attributes}")
-
-
-
-
-class Compare(Files):
-
-
+    @abstractmethod
     def __init__(self, files: List[FileCompare]) -> None:
         self.files = files
         self.num_files = len(self.files)
-        
-    
 
+
+    @abstractmethod
     def compare(self):
-        self._compare_multipocessing()
-        #self._main(self.files)
-        ReportAll.write_total_record()
-      
-    
+        pass
+
 
     def _compare_multipocessing(self):
         for attr_name in setting.BODY_NAMES:
@@ -716,6 +721,28 @@ class Compare(Files):
         return result
     
 
+    @abstractmethod
+    def _main(self, files: List[FileCompare]):
+        pass
+
+
+
+class CompareAll(Compare):
+
+
+    def __init__(self, files: List[FileCompare]) -> None:
+        super().__init__(files)
+        
+
+    def compare(self, report: Report, logger: Logger):
+        self.logger = logger
+        self.report = report
+        self._compare_multipocessing()
+        
+        #self._main(self.files)
+        self.report.write_total_record()
+      
+
     def _main(self, files: List[FileCompare]):
         for attr_name in setting.BODY_NAMES:
             Counter.total_dict[attr_name] = 0
@@ -726,25 +753,37 @@ class Compare(Files):
             if Files.rename:
                 FileWriter.write(file)
             RecordSeparation(file, counter).difference_types()
-            logger_stat(file.filename, counter)
+            self.logger.logger_stat(file.filename, counter)
             comparer = PartsComparison(file, counter)
-            comparer.execute()
-            reportAll = ReportAll(file, counter)
+            comparer.execute(self.logger.logger)
+            reportAll = ReportFile(file, counter)
             if counter.errors:
                 reportAll.create_file_errors_report()
             reportAll.write_file_report_csv()
-            logger_main(counter)
+            self.logger.logger_main(counter)
         return Counter.total_dict
+    
+
+class CompareFactory:
+
+    @staticmethod
+    def create_comparer(files: List[FileCompare]):
+        if setting.COMPARE_STRATEGY == 'all':
+            return CompareAll(files)
+        # elif setting.COMPARE_STRATEGY == 'keys':
+        #   return CompareWithKeys(files)
+
 
 
 
 
 class MergeFiles:
-
-    def __init__(self, etalon_files: EtalonFiles, source_files: SourceFiles) -> None:
+    def __init__(self, etalon_files: EtalonFiles, source_files: SourceFiles, report: Report, logger: Logger) -> None:
         self.etalon_files = etalon_files
         self.source_files = source_files
-        self.files = []
+        self.files: List[FileCompare] = []
+        self.logger = logger.logger
+        self.report = report
 
 
     def merge(self):
@@ -756,15 +795,16 @@ class MergeFiles:
                 self.files.append(file)
             except KeyError:
                 error_file = 'Etalon' if filename not in self.etalon_files.files else 'Source'
-                Logger.logger.error("Missing records {} for the file: {}. ".format(error_file, filename))
-                ReportAll.create_error_file('{} missing files'.format(error_file) , filename)
+                self.logger.error("Missing records {} for the file: {}. ".format(error_file, filename))
+                self.report.create_error_file('{} missing files'.format(error_file) , filename)
 
 
 class Records:
 
     def __init__(self, etalon: Etalon, source: Source, filename:str) -> None:
         pass
-        
+
+
 
 def timer(func):
     def wrapper():
@@ -776,18 +816,20 @@ def timer(func):
 class FacadeCompare:
 
     def __init__(self) -> None:
-        self.etalon_files = EtalonFiles()
-        self.source_files = SourceFiles()
+        self.report = Report()
+        self.logger = Logger()
+        self.etalon_files = EtalonFiles(self.report, self.logger)
+        self.source_files = SourceFiles(self.report, self.logger)
+        
 
 
     def run(self):
-        collect = FilesFactory(self.etalon_files, self.source_files)
-        collect.collector.get_files()
-        ReportAll.create_folder_errors_report()
-        merge_files = MergeFiles(self.etalon_files, self.source_files)
+        collector = FileCollectorFactory.create_collector(self.etalon_files, self.source_files)
+        collector.collect_files()
+        merge_files = MergeFiles(self.etalon_files, self.source_files, self.report, self.logger)
         merge_files.merge()
-        compare = Compare(merge_files.files)
-        compare.compare()
+        comparer = CompareFactory.create_comparer(merge_files.files)
+        comparer.compare(self.report, self.logger)
 
 
 if __name__ == '__main__':
