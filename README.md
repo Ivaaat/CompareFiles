@@ -1,93 +1,107 @@
-# comparison
+# CompareFiles
+
+## Описание
+
+File Comparison Tool — это приложение, которое собирает файлы из двух директорий на основе указанных масок и путей, сравнивает их и создает отчеты. Программа позволяет применять регулярные выражения к именам файлов и выполнять сравнение содержимого файлов в зависимости от заданных параметров. 
+
+## Установка
+
+1. Убедитесь, что у вас установлен Python (версия 3.6 и выше).
+2. Клонируйте репозиторий:
+
+   ```bash
+   git clone https://github.com/Ivaaat/CompareFiles.git
+   cd CompareFiles
+   ```
 
 
 
-## Getting started
+## Настройка
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
+Перед запуском приложения, вам необходимо заполнить файл конфигурации **config_comparison.ini**. Примерный файл настроек можно использовать в качестве шаблона:
 
 ```
-cd existing_repo
-git remote add origin http://gitlab.stm.local/ivan.konikhin/comparison.git
-git branch -M main
-git push -uf origin main
+[general]
+log_in_file = True
+log_file_max_size = 100
+log_file_backup_count = 1
+max_broken_attributes = 100
+regex_rename_files = .*
+mask_files_etalon = *msk*
+mask_files_source = *msk*
+encode_files_etalon = utf-8
+encode_files_source = utf-8
+num_unique_keys = 5
+compare_strategy = all  # Можно использовать 'keys' для сравнения по ключевым полям
+type_delimiter = fields  # Или 'char' для символов
+prepare_etalon = False
+prepare_source = False
+
+[unf_output]
+name_output = foris_cisco
+etalons = # путь к файлам
+sources = # путь к файлам
+result_dir = # путь к отчетам
+delimiter= ,
+key_fields = 0
+excluded_fields = 9
+num_records_header = 1
+num_records_header = -2
+field_sizes_body = 6,5,5,14,10,10,21,21,21,31,31,17,10,10,5,10,5,10,3,10,10,1,1,1,1,10,20,20,10,10,5,5,5,15,15
+field_names_body = 6,5,5,14,10,10,21,21,21,31,31,17,10,10,5,10,5,10,3,10,10,1,1,1,1,10,20,20,10,10,5,5,5,15,15
 ```
 
-## Integrate with your tools
+### Параметры конфигурации
 
-- [ ] [Set up project integrations](http://gitlab.stm.local/ivan.konikhin/comparison/-/settings/integrations)
+- **[general]**: Общие настройки для логирования и параметров сравнения.
+  - `log_in_file`: Включает логирование в файле.
+  - `log_file_max_size`: Максимальный размер журнала.
+  - `regex_rename_files`: Регулярное выражение для переименования файлов.
+  - `mask_files_etalon`, `mask_files_source`: Маски файлов для выбора эталонных и исходных файлов.
+  - `compare_strategy`: Стратегия сравнения (`all` для сравнения всех полей или `keys` для ключевых полей).
 
-## Collaborate with your team
+- **[unf_output]**: Параметры для сравнения и хранения результатов.
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
 
-## Test and Deploy
+## Использование
 
-Use the built-in continuous integration in GitLab.
+Запустите приложение с помощью команды:
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+```bash
+python сompare.py --config <путь_к_файлу_конфигурации> 
+```
 
-***
+Пример:
 
-# Editing this README
+```bash
+python сompare.py --config config.ini
+```
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+Можно использовать сокрщение `-c` вместо `--config`
 
-## Suggestions for a good README
+## Формат отчетов
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+Приложение формирует несколько отчетов:
+Значение **name_output** берется из файла конфигурации
 
-## Name
-Choose a self-explaining name for your project.
+  1. Итоговый CSV отчет: Каждый отчет будет назван в формате name_output_дата_время_Comparison_Result.csv (например, foris_cisco_08-08-24_144819_Comparison_Result.csv), и будет содержать статистику по каждому   
+     файлу.
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+  2. body_non_matching_records.txt: Этот отчет включает строки, которые не попали под совпадение.
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+  3. Атрибутные отчеты: Результаты сравнения по каждому атрибуту будут сохранены в формате body_num_fields_X атрибут_name.report.
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+  4. Логи: Отчет с логами будет записан в файл name_output_дата_время.log (например, foris_cisco_24-09-24_134931.log).
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+  5. Regexp not match in etl or src: Отчет со списком файлов, не подходящих под регулярное выражение, будет сохранен отдельно.
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+## Поддержка
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+Если у вас возникли вопросы или предложения по улучшению, пожалуйста, откройте issue на GitHub:
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+[Открыть issue](https://github.com/Ivaaat/CompareFiles.git)
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+### Примечания:
+- Настройте пути и значения в файле конфигурации в зависимости от ваших нужд.
+- Убедитесь, что упомянутые параметры и секции соответствуют функциональности вашего приложения.
